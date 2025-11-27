@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import UIKit // Needed for Haptics
 
 /// The "brains" of the game, this class manages all game state and logic.
 @MainActor // Ensures all UI updates happen on the main thread
@@ -36,11 +37,12 @@ class GameViewModel: ObservableObject {
     @Published var gameState: GameState = .playing
     
     // --- Score / Streak Properties ---
-    /// Current consecutive wins
     @Published var currentStreak: Int = 0
-    
-    /// Highest streak ever achieved (persisted)
     @Published var bestStreak: Int = UserDefaults.standard.integer(forKey: "ChromaClue_BestStreak")
+    
+    // --- Animation State ---
+    /// The ID of the tile that should currently be shaking (if wrong guess)
+    @Published var shakingTileId: UUID?
     
     enum GameState {
         case playing, won, lost
@@ -56,25 +58,23 @@ class GameViewModel: ObservableObject {
     
     /// Resets the game board for a new round
     func startNewRound() {
-        // Pick a random tile to be the answer
         correctAnswer = allTiles.randomElement()
-        
-        // Pick a random hint from that tile's list
         currentHint = correctAnswer?.hints.randomElement() ?? "No hint found"
         
-        // Reset game state
         guessesLeft = totalGuesses
         feedbackMessage = "Guesses left: \(guessesLeft)"
         gameState = .playing
         lastGuess = nil
+        shakingTileId = nil
     }
     
     /// Processes a user's guess
     func makeGuess(guessedTile: ChromaTile) {
-        // Ignore taps if the game is already over
         guard gameState == .playing else { return }
         
-        // Store this guess for the lose screen
+        // Prevent spamming the same wrong tile while it's shaking
+        if shakingTileId == guessedTile.id { return }
+        
         lastGuess = guessedTile
         guessesLeft -= 1
         
@@ -82,11 +82,9 @@ class GameViewModel: ObservableObject {
         if guessedTile == correctAnswer {
             gameState = .won
             feedbackMessage = "You got it!"
+            triggerHaptic(type: .success) // <--- SUCCESS HAPTIC
             
-            // Increment streak
             currentStreak += 1
-            
-            // Update Best Streak if needed
             if currentStreak > bestStreak {
                 bestStreak = currentStreak
                 UserDefaults.standard.set(bestStreak, forKey: "ChromaClue_BestStreak")
@@ -97,11 +95,10 @@ class GameViewModel: ObservableObject {
         // --- 2. Check for a LOSS ---
         if guessesLeft == 0 {
             gameState = .lost
+            triggerHaptic(type: .error) // <--- ERROR HAPTIC
             
-            // Reset streak logic
             currentStreak = 0
             
-            // Show the similarity percentage on the final feedback
             if let answer = correctAnswer, let finalGuess = lastGuess {
                 let similarity = Color.similarityPercentage(color1: finalGuess.color, color2: answer.color)
                 feedbackMessage = "You were \(similarity)% similar!"
@@ -109,15 +106,14 @@ class GameViewModel: ObservableObject {
             return
         }
         
-        // --- 3. Give "Hot/Cold" FEEDBACK ---
-        guard let answer = correctAnswer else { return }
+        // --- 3. Wrong Guess Logic (Shake + Feedback) ---
+        triggerHaptic(type: .error) // <--- WARNING/ERROR HAPTIC
+        triggerShake(for: guessedTile.id) // <--- TRIGGER ANIMATION
         
-        // Get the "distance" between the colors. Lower is better.
+        guard let answer = correctAnswer else { return }
         let distance = Color.colorDifference(color1: guessedTile.color, color2: answer.color)
         
         var feedback: String
-        
-        // These thresholds (0-442 max) determine the feedback.
         if distance < 100 {
             feedback = "You're hot!"
         } else if distance < 250 {
@@ -127,5 +123,24 @@ class GameViewModel: ObservableObject {
         }
         
         feedbackMessage = "\(feedback) (\(guessesLeft) guesses left)"
+    }
+    
+    /// Triggers the visual shake animation for a specific tile
+    private func triggerShake(for tileId: UUID) {
+        // We wrap this in withAnimation to drive the transition 0 -> 1 in the View modifier
+        withAnimation(.default) {
+            self.shakingTileId = tileId
+        }
+        
+        // Reset after animation completes so it can be triggered again
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.shakingTileId = nil
+        }
+    }
+    
+    /// Triggers physical haptic feedback on supported devices
+    private func triggerHaptic(type: UINotificationFeedbackGenerator.FeedbackType) {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(type)
     }
 }
