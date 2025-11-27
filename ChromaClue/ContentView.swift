@@ -12,54 +12,64 @@ struct ContentView: View {
     /// The "brains" of the game. We create one instance and observe it.
     @StateObject private var viewModel = GameViewModel()
     
-    /// Defines the 6-column layout for the grid
+    /// Defines the 6-column layout for the grid.
+    /// The number of rows is determined by the data count (54 tiles / 6 cols = 9 rows).
     private let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
     
     var body: some View {
         ZStack {
             // Main game UI
-            VStack(spacing: 16) {
+            VStack(spacing: 0) { // Spacing handled by padding inside elements
                 
-                // MARK: - Hint Area
+                // MARK: - Hint Area (Fixed at Top)
                 VStack {
                     Text("HINT")
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                        .padding(.top, 16)
                     
                     // The hint itself
                     Text(viewModel.currentHint)
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .multilineTextAlignment(.center)
                         .animation(.none, value: viewModel.currentHint) // Don't animate hint text changes
+                        .padding(.bottom, 16)
                 }
-                .frame(height: 100)
+                .frame(minHeight: 100)
+                .background(Color(.systemBackground)) // Ensure it has a background if it floats
                 
-                // MARK: - Grid Area
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(viewModel.allTiles) { tile in
-                        Button {
-                            // Tapping a tile triggers the guess logic
-                            viewModel.makeGuess(guessedTile: tile)
-                        } label: {
-                            Rectangle()
-                                .fill(tile.color)
-                                .aspectRatio(1, contentMode: .fit) // Makes it a perfect square
-                                .cornerRadius(8)
+                // MARK: - Scrollable Grid Area
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(viewModel.allTiles) { tile in
+                            Button {
+                                // Tapping a tile triggers the guess logic
+                                viewModel.makeGuess(guessedTile: tile)
+                            } label: {
+                                Rectangle()
+                                    .fill(tile.color)
+                                    .aspectRatio(1, contentMode: .fit) // Makes it a perfect square
+                                    .cornerRadius(8)
+                            }
+                            // Disable buttons when game is not being played
+                            .disabled(viewModel.gameState != .playing)
                         }
-                        // Disable buttons when game is not being played
-                        .disabled(viewModel.gameState != .playing)
                     }
+                    .padding() // Padding around the grid content
+                    .padding(.bottom, 20) // Extra padding at bottom so last row isn't cramped
                 }
                 
-                // MARK: - Feedback Area
-                Text(viewModel.feedbackMessage)
-                    .font(.system(.title2, design: .rounded, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .frame(height: 80)
-                
-                Spacer() // Pushes content to the top
+                // MARK: - Feedback Area (Fixed at Bottom)
+                // Kept outside the ScrollView so the user always sees their result immediately
+                VStack {
+                    Text(viewModel.feedbackMessage)
+                        .font(.system(.title2, design: .rounded, weight: .medium))
+                        .multilineTextAlignment(.center)
+                }
+                .frame(height: 80)
+                .frame(maxWidth: .infinity)
+                .background(Color(.systemBackground)) // Opaque background
             }
-            .padding()
             
             // MARK: - Win/Loss Overlay
             // This view appears over the top when the game is won or lost
@@ -95,6 +105,7 @@ struct GameOverlayView: View {
             VStack {
                 Text("The color for \"\(viewModel.currentHint)\" was:")
                     .font(.headline)
+                    .multilineTextAlignment(.center)
                 
                 if let correctColor = viewModel.correctAnswer?.color {
                     Rectangle()
