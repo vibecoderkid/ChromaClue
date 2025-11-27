@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     
+    @State private var showingAboutSheet = false
     @StateObject private var viewModel = GameViewModel()
     
     private let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
@@ -31,11 +32,11 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    Text("ChromaClue")
-                        .font(.system(.headline, design: .rounded, weight: .black))
-                        .foregroundStyle(.tertiary)
-                    
-                    Spacer()
+//                    Text("ChromaClue")
+//                        .font(.system(.headline, design: .rounded, weight: .black))
+//                        .foregroundStyle(.tertiary)
+//                    
+//                    Spacer()
                     
                     VStack(alignment: .trailing) {
                         Text("BEST")
@@ -59,7 +60,7 @@ struct ContentView: View {
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .multilineTextAlignment(.center)
                         .animation(.none, value: viewModel.currentHint)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 0)
                 }
                 .frame(minHeight: 0)
                 .frame(maxWidth: .infinity)
@@ -67,7 +68,7 @@ struct ContentView: View {
                 
                 // MARK: - Scrollable Grid Area
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 8) {
+                    LazyVGrid(columns: columns, spacing: 4) {
                         ForEach(viewModel.allTiles) { tile in
                             Button {
                                 viewModel.makeGuess(guessedTile: tile)
@@ -98,6 +99,20 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .background(Color(.systemBackground))
             }
+            .toolbar {
+                ToolbarItem(placement: .bottomBar) {
+                    Button(action: {
+                        showingAboutSheet.toggle()
+                    }) {
+                        Image(systemName: "info.circle")
+                    }
+                }
+            }
+            .navigationViewStyle(.stack)
+            .sheet(isPresented: $showingAboutSheet) {
+                AboutView()
+            }
+
             
             // MARK: - Win/Loss Overlay
             if viewModel.gameState != .playing {
