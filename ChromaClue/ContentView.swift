@@ -13,30 +13,60 @@ struct ContentView: View {
     @StateObject private var viewModel = GameViewModel()
     
     /// Defines the 6-column layout for the grid.
-    /// The number of rows is determined by the data count (54 tiles / 6 cols = 9 rows).
     private let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
     
     var body: some View {
         ZStack {
             // Main game UI
-            VStack(spacing: 0) { // Spacing handled by padding inside elements
+            VStack(spacing: 0) {
+                
+                // MARK: - Streak Header
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("STREAK")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        Text("\(viewModel.currentStreak)")
+                            .font(.system(.title2, design: .rounded, weight: .heavy))
+                            .foregroundStyle(viewModel.currentStreak > 0 ? .orange : .primary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("ChromaClue")
+                        .font(.system(.headline, design: .rounded, weight: .black))
+                        .foregroundStyle(.tertiary)
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing) {
+                        Text("BEST")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        Text("\(viewModel.bestStreak)")
+                            .font(.system(.title2, design: .rounded, weight: .heavy))
+                    }
+                }
+                .padding(.horizontal,24)
+                .padding(.top, 0)
+                .padding(.bottom, 0)
                 
                 // MARK: - Hint Area (Fixed at Top)
                 VStack {
                     Text("HINT")
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                        .padding(.top, 16)
                     
                     // The hint itself
                     Text(viewModel.currentHint)
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
                         .multilineTextAlignment(.center)
                         .animation(.none, value: viewModel.currentHint) // Don't animate hint text changes
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 10)
                 }
-                .frame(minHeight: 100)
-                .background(Color(.systemBackground)) // Ensure it has a background if it floats
+                .frame(minHeight: 0)
+                .frame(maxWidth: .infinity)
+                .background(Color(.systemBackground))
                 
                 // MARK: - Scrollable Grid Area
                 ScrollView {
@@ -56,11 +86,10 @@ struct ContentView: View {
                         }
                     }
                     .padding() // Padding around the grid content
-                    .padding(.bottom, 20) // Extra padding at bottom so last row isn't cramped
+                    .padding(.bottom, 20) // Extra padding at bottom
                 }
                 
                 // MARK: - Feedback Area (Fixed at Bottom)
-                // Kept outside the ScrollView so the user always sees their result immediately
                 VStack {
                     Text(viewModel.feedbackMessage)
                         .font(.system(.title2, design: .rounded, weight: .medium))
@@ -68,11 +97,10 @@ struct ContentView: View {
                 }
                 .frame(height: 80)
                 .frame(maxWidth: .infinity)
-                .background(Color(.systemBackground)) // Opaque background
+                .background(Color(.systemBackground))
             }
             
             // MARK: - Win/Loss Overlay
-            // This view appears over the top when the game is won or lost
             if viewModel.gameState != .playing {
                 GameOverlayView(viewModel: viewModel)
             }
@@ -85,8 +113,6 @@ struct ContentView: View {
 /// The modal-like view that appears when the game is won or lost.
 struct GameOverlayView: View {
     
-    /// We use @ObservedObject here because the view is *not* creating
-    /// the viewModel, just watching the one passed in from ContentView.
     @ObservedObject var viewModel: GameViewModel
     
     var body: some View {
@@ -119,11 +145,24 @@ struct GameOverlayView: View {
                 }
             }
             
+            // --- Streak Info ---
+            if viewModel.gameState == .won {
+                Text("Streak: \(viewModel.currentStreak) 🔥")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.orange)
+            } else {
+                 Text("Streak Reset 😢")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            
             // --- Show final guess ONLY if the user lost ---
             if viewModel.gameState == .lost {
                 VStack {
                     Text("Your final guess:")
                         .font(.headline)
+                        .padding(.top, 8)
                     
                     if let lastGuessColor = viewModel.lastGuess?.color {
                         Rectangle()
@@ -132,7 +171,6 @@ struct GameOverlayView: View {
                             .cornerRadius(12)
                     }
                     
-                    // The final feedback (e.g., "You were 85% similar!")
                     Text(viewModel.feedbackMessage)
                         .font(.system(.title3, design: .rounded, weight: .medium))
                         .padding(.top, 4)
@@ -158,7 +196,7 @@ struct GameOverlayView: View {
         .background(Color(.systemBackground)) // Adapts to light/dark mode
         .cornerRadius(20)
         .shadow(radius: 10)
-        .padding(30) // Adds margin around the modal
+        .padding(30)
     }
 }
 

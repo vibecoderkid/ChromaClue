@@ -6,14 +6,14 @@
 //
 
 import SwiftUI
-import Combine // <-- ADD THIS LINE
+import Combine
 
 /// The "brains" of the game, this class manages all game state and logic.
 @MainActor // Ensures all UI updates happen on the main thread
 class GameViewModel: ObservableObject {
     
     // --- Game Data ---
-    /// The master list of all 36 tiles
+    /// The master list of all 54 tiles
     let allTiles: [ChromaTile] = TileData.tiles
     
     // --- Game State Properties ---
@@ -34,6 +34,13 @@ class GameViewModel: ObservableObject {
     
     /// The current status of the game
     @Published var gameState: GameState = .playing
+    
+    // --- Score / Streak Properties ---
+    /// Current consecutive wins
+    @Published var currentStreak: Int = 0
+    
+    /// Highest streak ever achieved (persisted)
+    @Published var bestStreak: Int = UserDefaults.standard.integer(forKey: "ChromaClue_BestStreak")
     
     enum GameState {
         case playing, won, lost
@@ -75,12 +82,25 @@ class GameViewModel: ObservableObject {
         if guessedTile == correctAnswer {
             gameState = .won
             feedbackMessage = "You got it!"
+            
+            // Increment streak
+            currentStreak += 1
+            
+            // Update Best Streak if needed
+            if currentStreak > bestStreak {
+                bestStreak = currentStreak
+                UserDefaults.standard.set(bestStreak, forKey: "ChromaClue_BestStreak")
+            }
             return
         }
         
         // --- 2. Check for a LOSS ---
         if guessesLeft == 0 {
             gameState = .lost
+            
+            // Reset streak logic
+            currentStreak = 0
+            
             // Show the similarity percentage on the final feedback
             if let answer = correctAnswer, let finalGuess = lastGuess {
                 let similarity = Color.similarityPercentage(color1: finalGuess.color, color2: answer.color)
@@ -109,5 +129,3 @@ class GameViewModel: ObservableObject {
         feedbackMessage = "\(feedback) (\(guessesLeft) guesses left)"
     }
 }
-
-
