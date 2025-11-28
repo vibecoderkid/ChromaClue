@@ -17,7 +17,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             // Main game UI
-            VStack(spacing: 0) {
+            VStack(spacing: 10) {
                 
                 // MARK: - Streak Header
                 HStack {
@@ -32,11 +32,11 @@ struct ContentView: View {
                     
                     Spacer()
                     
-//                    Text("ChromaClue")
-//                        .font(.system(.headline, design: .rounded, weight: .black))
-//                        .foregroundStyle(.tertiary)
-//                    
-//                    Spacer()
+                    Text("ChromaClue")
+                        .font(.system(.headline, design: .rounded, weight: .black))
+                        .foregroundStyle(.tertiary)
+                    
+                    Spacer()
                     
                     VStack(alignment: .trailing) {
                         Text("BEST")
@@ -45,20 +45,26 @@ struct ContentView: View {
                         Text("\(viewModel.bestStreak)")
                             .font(.system(.title2, design: .rounded, weight: .heavy))
                     }
+                    
+                    Button(action: {
+                        showingAboutSheet.toggle()
+                    }) {
+                        Image(systemName: "info.circle")
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 0)
                 .padding(.bottom, 0)
                 
                 // MARK: - Hint Area
-                VStack {
-                    Text("HINT")
+                HStack {
+                    Text("HINT: ")
                         .font(.headline)
                         .foregroundStyle(.secondary)
                     
                     Text(viewModel.currentHint)
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        .multilineTextAlignment(.center)
+                        .font(.system(.title, design: .rounded, weight: .bold))
+                        // .multilineTextAlignment(.center)
                         .animation(.none, value: viewModel.currentHint)
                         .padding(.bottom, 0)
                 }
@@ -98,15 +104,6 @@ struct ContentView: View {
                 .frame(height: 80)
                 .frame(maxWidth: .infinity)
                 .background(Color(.systemBackground))
-            }
-            .toolbar {
-                ToolbarItem(placement: .bottomBar) {
-                    Button(action: {
-                        showingAboutSheet.toggle()
-                    }) {
-                        Image(systemName: "info.circle")
-                    }
-                }
             }
             .navigationViewStyle(.stack)
             .sheet(isPresented: $showingAboutSheet) {
