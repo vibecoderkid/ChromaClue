@@ -7,140 +7,219 @@
 
 import SwiftUI
 import Combine
-import UIKit // Needed for Haptics
+import UIKit
 
-/// The "brains" of the game, this class manages all game state and logic.
-@MainActor // Ensures all UI updates happen on the main thread
+@MainActor
 class GameViewModel: ObservableObject {
     
     // --- Game Data ---
-    /// The master list of all 54 tiles
     let allTiles: [ChromaTile] = TileData.tiles
     
-    // --- Game State Properties ---
-    /// The correct tile the user is trying to guess
-    @Published var correctAnswer: ChromaTile?
+    // --- Progression ---
+    @Published var currentLevel: Int = 1
     
-    /// The tile the user last tapped on
-    @Published var lastGuess: ChromaTile?
+    enum GameMode {
+        case mixing          // User finds the result of A + B
+        case deconstruction  // User finds the two ingredients (A, B) that make Target
+    }
+    
+    var activeMode: GameMode {
+        return currentLevel <= 10 ? .mixing : .deconstruction
+    }
 
-    /// The hint currently being displayed
-    @Published var currentHint: String = ""
-    
-    /// How many guesses the user has left
-    @Published var guessesLeft: Int = 0
-    
-    /// The "Hot/Cold" or "Win/Loss" message
-    @Published var feedbackMessage: String = ""
-    
-    /// The current status of the game
+    // --- Round State ---
     @Published var gameState: GameState = .playing
+    @Published var guessesLeft: Int = 0
+    @Published var feedbackMessage: String = ""
+    @Published var lastGuess: ChromaTile?
     
-    // --- Score / Streak Properties ---
+    // --- Streak Logic ---
     @Published var currentStreak: Int = 0
     @Published var bestStreak: Int = UserDefaults.standard.integer(forKey: "ChromaClue_BestStreak")
     
-    // --- Animation State ---
-    /// The ID of the tile that should currently be shaking (if wrong guess)
+    // --- Visuals & Animation ---
     @Published var shakingTileId: UUID?
+    
+    // --- MIXING MODE DATA (Levels 1-10) ---
+    @Published var mixingIngredients: [Color] = []
+    var mixingTargetTile: ChromaTile?
+    
+    // --- DECONSTRUCTION MODE DATA (Levels 11+) ---
+    var deconstructionTargetTiles: Set<UUID> = []
+    @Published var deconstructionTargetColor: Color = .clear
+    @Published var firstSelection: ChromaTile?
     
     enum GameState {
         case playing, won, lost
     }
-
-    // --- Constants ---
+    
+    // --- Custom Enum to fix the Haptic Type Error ---
+    enum HapticType {
+        case success
+        case warning
+        case error
+        case selection
+    }
+    
     let totalGuesses = 3
     
-    // --- Initializer ---
     init() {
         startNewRound()
     }
     
-    /// Resets the game board for a new round
     func startNewRound() {
-        correctAnswer = allTiles.randomElement()
-        currentHint = correctAnswer?.hints.randomElement() ?? "No hint found"
+        if activeMode == .mixing {
+            setupMixingRound()
+        } else {
+            setupDeconstructionRound()
+        }
         
+        // Reset Common State
         guessesLeft = totalGuesses
         feedbackMessage = "Guesses left: \(guessesLeft)"
         gameState = .playing
         lastGuess = nil
         shakingTileId = nil
+        firstSelection = nil
     }
     
-    /// Processes a user's guess
-    func makeGuess(guessedTile: ChromaTile) {
+    // MARK: - Setup Logic
+    
+    private func setupMixingRound() {
+        let c1 = Color(red: Double.random(in: 0...1), green: Double.random(in: 0...1), blue: Double.random(in: 0...1))
+        let c2 = Color(red: Double.random(in: 0...1), green: Double.random(in: 0...1), blue: Double.random(in: 0...1))
+        mixingIngredients = [c1, c2]
+        
+        let result = Color.blend(color1: c1, color2: c2)
+        
+        mixingTargetTile = allTiles.min(by: { tileA, tileB in
+            Color.colorDifference(color1: tileA.color, color2: result) <
+            Color.colorDifference(color1: tileB.color, color2: result)
+        })
+    }
+    
+    private func setupDeconstructionRound() {
+        guard let t1 = allTiles.randomElement(),
+              let t2 = allTiles.filter({ $0.id != t1.id }).randomElement() else { return }
+        
+        deconstructionTargetTiles = [t1.id, t2.id]
+        deconstructionTargetColor = Color.blend(color1: t1.color, color2: t2.color)
+        firstSelection = nil
+    }
+    
+    // MARK: - Gameplay Logic
+    
+    func handleTileTap(tile: ChromaTile) {
+        if activeMode == .mixing {
+            handleMixingGuess(tile)
+        } else {
+            handleDeconstructionGuess(tile)
+        }
+    }
+    
+    private func handleMixingGuess(_ tile: ChromaTile) {
+        guard gameState == .playing, let target = mixingTargetTile else { return }
+        
+        guessesLeft -= 1
+        lastGuess = tile
+        
+        if tile.id == target.id {
+            handleWin()
+        } else {
+            handleWrongGuess(tile: tile, targetColor: target.color)
+        }
+    }
+    
+    private func handleDeconstructionGuess(_ tile: ChromaTile) {
         guard gameState == .playing else { return }
         
-        // Prevent spamming the same wrong tile while it's shaking
-        if shakingTileId == guessedTile.id { return }
-        
-        lastGuess = guessedTile
-        guessesLeft -= 1
-        
-        // --- 1. Check for a WIN ---
-        if guessedTile == correctAnswer {
-            gameState = .won
-            feedbackMessage = "You got it!"
-            triggerHaptic(type: .success) // <--- SUCCESS HAPTIC
-            
-            currentStreak += 1
-            if currentStreak > bestStreak {
-                bestStreak = currentStreak
-                UserDefaults.standard.set(bestStreak, forKey: "ChromaClue_BestStreak")
-            }
+        // Step 1: User selects first tile
+        if firstSelection == nil {
+            firstSelection = tile
+            triggerHaptic(type: .selection) // This now works with the new enum
             return
         }
         
-        // --- 2. Check for a LOSS ---
+        // Step 2: User selects second tile
+        guard let first = firstSelection else { return }
+        
+        if first.id == tile.id {
+            firstSelection = nil
+            return
+        }
+        
+        let guessSet: Set<UUID> = [first.id, tile.id]
+        
+        guessesLeft -= 1
+        lastGuess = tile
+        
+        if guessSet == deconstructionTargetTiles {
+            handleWin()
+        } else {
+            handleWrongGuess(tile: tile, targetColor: deconstructionTargetColor)
+            firstSelection = nil
+        }
+    }
+    
+    // MARK: - Common Outcomes
+    
+    private func handleWin() {
+        gameState = .won
+        feedbackMessage = "Correct!"
+        triggerHaptic(type: .success)
+        
+        currentStreak += 1
+        if currentStreak > bestStreak {
+            bestStreak = currentStreak
+            UserDefaults.standard.set(bestStreak, forKey: "ChromaClue_BestStreak")
+        }
+        
+        currentLevel += 1
+    }
+    
+    private func handleWrongGuess(tile: ChromaTile, targetColor: Color) {
         if guessesLeft == 0 {
             gameState = .lost
-            triggerHaptic(type: .error) // <--- ERROR HAPTIC
-            
+            triggerHaptic(type: .error)
             currentStreak = 0
             
-            if let answer = correctAnswer, let finalGuess = lastGuess {
-                let similarity = Color.similarityPercentage(color1: finalGuess.color, color2: answer.color)
-                feedbackMessage = "You were \(similarity)% similar!"
-            }
-            return
-        }
-        
-        // --- 3. Wrong Guess Logic (Shake + Feedback) ---
-        triggerHaptic(type: .error) // <--- WARNING/ERROR HAPTIC
-        triggerShake(for: guessedTile.id) // <--- TRIGGER ANIMATION
-        
-        guard let answer = correctAnswer else { return }
-        let distance = Color.colorDifference(color1: guessedTile.color, color2: answer.color)
-        
-        var feedback: String
-        if distance < 100 {
-            feedback = "You're hot!"
-        } else if distance < 250 {
-            feedback = "Getting warmer..."
+            let similarity = Color.similarityPercentage(color1: tile.color, color2: targetColor)
+            feedbackMessage = "Game Over. \(similarity)% close."
         } else {
-            feedback = "Ice cold."
+            triggerHaptic(type: .warning)
+            triggerShake(for: tile.id)
+            
+            let dist = Color.colorDifference(color1: tile.color, color2: targetColor)
+            if dist < 100 { feedbackMessage = "Hot!" }
+            else if dist < 200 { feedbackMessage = "Warm..." }
+            else { feedbackMessage = "Cold." }
+            
+            feedbackMessage += " (\(guessesLeft) left)"
         }
-        
-        feedbackMessage = "\(feedback) (\(guessesLeft) guesses left)"
     }
+
+    // MARK: - Helpers
     
-    /// Triggers the visual shake animation for a specific tile
     private func triggerShake(for tileId: UUID) {
-        // We wrap this in withAnimation to drive the transition 0 -> 1 in the View modifier
-        withAnimation(.default) {
-            self.shakingTileId = tileId
-        }
-        
-        // Reset after animation completes so it can be triggered again
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            self.shakingTileId = nil
-        }
+        withAnimation(.default) { self.shakingTileId = tileId }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.shakingTileId = nil }
     }
     
-    /// Triggers physical haptic feedback on supported devices
-    private func triggerHaptic(type: UINotificationFeedbackGenerator.FeedbackType) {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(type)
+    /// Triggers physical haptic feedback using the correct generator for the type.
+    private func triggerHaptic(type: HapticType) {
+        switch type {
+        case .success:
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+        case .warning:
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+        case .error:
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.error)
+        case .selection:
+            let generator = UISelectionFeedbackGenerator()
+            generator.selectionChanged()
+        }
     }
 }
